@@ -11,7 +11,8 @@
             [leiningen.core.classpath :as classpath]
             [clojure.string :as str])
   (:import (clojure.lang DynamicClassLoader)
-           (java.io PushbackReader Reader)))
+           (java.io PushbackReader Reader)
+           (org.sonatype.aether.resolution ArtifactResolutionException)))
 
 (defn make-project-properties [project]
   (with-open [baos (java.io.ByteArrayOutputStream.)]
@@ -1036,12 +1037,58 @@ Also initializes the project; see read-raw for a version that skips init."
 
 (alter-var-root #'read-dependency-project memoize)
 
+(defn- project-symbol
+  "Given a project map, retireve the project's name symbol of the form group/name"
+  [{:keys [group name] :as project}]
+  (symbol group name))
+
+(defn- warn-checkout-version-mismatch
+  "Warns if a checkout project's declared version does not match the version
+   declared in the parent's project.clj"
+  [project {:keys [version] :as checkout-project} checkout-project-path]
+  (let [checkout-name (project-symbol checkout-project)
+        declared-dep (first (filter #(= checkout-name (first %))
+                                    (:dependencies project)))]
+    (when (and declared-dep (not= version (second declared-dep)))
+      (warn
+       (format (str "Warning: not using %s from checkouts, top-level project "
+                    "depends on mismatched version. Checkout (at %s) declares "
+                    "project [%s \"%s\"], top-level project depends on: %s")
+        checkout-name checkout-project-path checkout-name version
+        declared-dep)))))
+
+(defn- warn-checkout-release-conflict
+  "Warns if a checkout project's declared version matches a published release
+   version of the same dependency; project-path is the relative path from
+   the main project's root to the root of the checkout-project "
+  [{:keys [repositories mirrors] :as project}
+   {:keys [version] :as checkout-project} project-path]
+  (try
+    (let [project-name (project-symbol checkout-project)
+          artifact (first (aether/resolve-artifacts*
+                           :coordinates [[project-name version]]
+                           :repositories (map classpath/add-repo-auth repositories)
+                           :mirrors (map classpath/add-repo-auth mirrors)
+                           :offline? false))]
+      (warn (format (str "Warning: using %s version %s from %s, not "
+                         "the released version from %s.")
+                    project-name version project-path
+                    (-> artifact (.getRepository) (.getId)))))
+    (catch ArtifactResolutionException e
+      ;; Release version not found, no warning necessary
+      )))
+
 (defn read-checkouts
   "Returns a list of project maps for this project's checkout
   dependencies."
   [project]
   (for [dep (.listFiles (io/file (:root project) "checkouts"))
         :let [project-file (.getCanonicalFile (io/file dep "project.clj"))
-              checkout-project (read-dependency-project project-file)]
+              checkout-project (read-dependency-project project-file)
+              relative-path (.relativize (-> (io/file (:root project)) (.toPath))
+                                         (-> dep (.toPath)))]
         :when checkout-project]
-    checkout-project))
+    (do
+      (warn-checkout-version-mismatch project checkout-project relative-path)
+      (warn-checkout-release-conflict project checkout-project relative-path)
+      checkout-project)))

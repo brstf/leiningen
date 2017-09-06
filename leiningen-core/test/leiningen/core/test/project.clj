@@ -613,3 +613,16 @@
       [:e :b :c :d] "target/e+bcd"
       [:c :a :b :d] "target/c+ab+d"
       [:a]          "target/a")))
+
+(deftest test-warning-on-checkout-dependency-version-mismatch
+  (let [sw (new java.io.StringWriter)]
+    ;; Capture output to *err* to test warning
+    (binding [*err* sw]
+      (doall (read-checkouts (read (.getFile (io/resource "p4.clj")))))
+      (testing "Warning on checkout project version not matching parent dependency"
+        (is (= (str sw)
+               (str "(Warning: not using checkout-lib1/checkout-lib1 from "
+                    "checkouts, top-level project depends on mismatched version. "
+                    "Checkout (at checkouts/lib1) declares project "
+                    "[checkout-lib1/checkout-lib1 \"0.0.1\"], top-level project "
+                    "depends on: [checkout-lib1/checkout-lib1 \"0.0.2\"])\n")))))))
