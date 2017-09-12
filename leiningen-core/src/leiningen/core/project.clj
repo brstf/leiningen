@@ -11,8 +11,7 @@
             [leiningen.core.classpath :as classpath]
             [clojure.string :as str])
   (:import (clojure.lang DynamicClassLoader)
-           (java.io PushbackReader Reader)
-           (org.sonatype.aether.resolution ArtifactResolutionException)))
+           (java.io PushbackReader Reader)))
 
 (defn make-project-properties [project]
   (with-open [baos (java.io.ByteArrayOutputStream.)]
@@ -1074,7 +1073,7 @@ Also initializes the project; see read-raw for a version that skips init."
                          "the released version from %s.")
                     project-name version project-path
                     (-> artifact (.getRepository) (.getId)))))
-    (catch ArtifactResolutionException e
+    (catch Exception e
       ;; Release version not found, no warning necessary
       )))
 
