@@ -9,6 +9,10 @@
            (java.util.regex Pattern)
            (java.io ByteArrayOutputStream)))
 
+(defn- warn [& args]
+  (require 'leiningen.core.main)
+  (apply (resolve 'leiningen.core.main/warn) args))
+
 (defn getprop
   "Wrap System/getProperty for testing purposes."
   [prop-name]
@@ -135,17 +139,20 @@
   "Decrypt map from credentials.clj.gpg in Leiningen home if present."
   ([] (let [cred-file (io/file (leiningen-home) "credentials.clj.gpg")]
         (if (.exists cred-file)
-          (credentials-fn cred-file))))
+          (credentials-fn cred-file)
+          (warn (str "WARNING: Missing GPG credentials file: " (.getName cred-file)
+                     ". Expected to find credentials file in " (leiningen-home)
+                     ". GPG may fail due to missing credentials.")))))
   ([file]
-     (let [{:keys [out err exit]} (gpg "--quiet" "--batch"
-                                       "--decrypt" "--" (str file))]
-       (if (pos? exit)
-         (binding [*out* *err*]
-           (println "Could not decrypt credentials from" (str file))
-           (println err)
-           (println "See `lein help gpg` for how to install gpg."))
-         (binding [*read-eval* false]
-           (read-string out))))))
+   (let [{:keys [out err exit]} (gpg "--quiet" "--batch"
+                                     "--decrypt" "--" (str file))]
+     (if (pos? exit)
+       (binding [*out* *err*]
+         (println "Could not decrypt credentials from" (str file))
+         (println err)
+         (println "See `lein help gpg` for how to install gpg."))
+       (binding [*read-eval* false]
+         (read-string out))))))
 
 (def credentials (memoize credentials-fn))
 
@@ -155,6 +162,17 @@
                     :when (and (instance? Pattern re?)
                                (re-find re? (:url settings)))]
                 cred))))
+
+(defn- getenv-cred-or-warn
+  "Gets an environment variable, warning the user if the expected variable is
+   not present."
+  [key name]
+  (or (getenv name)
+      (warn (str "Could not find environment variable with name=" name
+                 ", credential " key " may not be present"))))
+
+(def ^:private credential-keys
+  #{:username :password :passphrase :private-key-file})
 
 (defn- resolve-credential
   "Resolve key-value pair from result into a credential, updating result."
@@ -175,9 +193,57 @@
                        first)
 
                   :else v))]
-    (if (#{:username :password :passphrase :private-key-file} k)
+    (if (credential-keys k)
       (assoc result k (resolve v))
       (assoc result k v))))
+
+(defn- credential-location
+  "Given a key-value pair of credential key and expected location (one of :env
+   :env/variable-name, :gpg, or a collection of these values), return a string
+   representation of where the credential was expected to be found. Used when
+   warning when credentials cannot be found."
+  [k v]
+  (cond (= :env v)
+        (str "environment variable with name LEIN_"
+             (str (str/upper-case (name k))))
+
+        (and (keyword? v) (= "env" (namespace v)))
+        (str "environment variable with name " (str/upper-case (name v)))
+
+        (= :gpg v)
+        (str "GPG credential with key " k  " in credentials file: "
+             (.getAbsolutePath (io/file (leiningen-home) "credentials.clj.gpg")) )
+
+        (coll? v) ;; collection of places to look
+        (->> (map credential-location (repeat k) v)
+             (remove nil?)
+             (str/join ", or "))))
+
+(defn expected-credential-location
+  "Prints out a warning the given credential key-value pair "
+  [[k v]]
+  (str k " as " (or (credential-location k v) (str "literal value " v))))
+
+(defn- warn-missing-credentials
+  "Checks to see if any expected credentials from the settings map were not
+   successfully resolved (i.e. the key is not present in resolved map, or it's
+   value is nil). Prints a warning for each of these keys where Leiningen
+   expected to find the value for this key and didn't."
+  [settings resolved]
+  (let [unresolved (->> (merge (zipmap credential-keys (repeat nil))
+                               resolved)
+                        (#(select-keys % credential-keys))
+                        (filter (comp nil? val))
+                        keys
+                        (select-keys settings))]
+    (when (not (empty? unresolved))
+      (warn "WARNING: some credentials could not be resolved for repository:"
+            (:url settings)
+            "\nExpected but not found:")
+      (doall (map (comp warn expected-credential-location) unresolved))
+      (warn ""))))
+
+(def warn-missing-credentials-once (memoize warn-missing-credentials))
 
 (defn resolve-credentials
   "Applies credentials from the environment or ~/.lein/credentials.clj.gpg
@@ -188,6 +254,7 @@
         resolved (reduce (partial resolve-credential settings)
                          (empty settings)
                          settings)]
+    (warn-missing-credentials-once settings resolved)
     (if gpg-creds
       (dissoc (merge gpg-creds resolved) :creds)
       resolved)))
