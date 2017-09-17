@@ -30,7 +30,7 @@
 
 # Leiningen Plugins
 
-Leiningen tasks are simply functions named $TASK in a leiningen.$TASK
+Leiningen tasks are simply functions named `$TASK` in a `leiningen.$TASK`
 namespace. So writing a Leiningen plugin is just a matter of creating
 a project that contains such a function, but much of this
 documentation applies equally to the tasks that ship with Leiningen
@@ -121,11 +121,11 @@ still passed in as strings; it's up to your function to call `read-string`
 on the arguments if you want keywords, symbols, integers, etc. Keep
 this in mind when calling other tasks as functions too.
 
-Most tasks may only be run in the context of another project. If your
+Most tasks may only be run in the context of a project. If your
 task can be run outside a project directory, add `^:no-project-needed`
 as metadata to your task defn to indicate so. Your task must still
 accept a project as its first argument, but it will be allowed to be
-nil. Leiningen will still pass you the project as first argument, if
+nil. Leiningen will still pass you the project as first argument if
 lein is called from within a project. If called outside of a project,
 lein will send in profile information from `$HOME/.lein/profiles.clj`
 and similar sources as a map similar to a project map. Other tools using
@@ -282,6 +282,11 @@ downstream artifacts, like `jar`, `uberjar`, and `pom`.
 
 ### Hooks
 
+**Note**: Leiningen supports loading hooks from plugins; however this
+mechanism is extremely error-prone and difficult to debug. It should
+be considered deprecated as of 2.8.0 onward and will continue to work
+until version 3.0 but is strongly advised against.
+
 You can modify the behaviour of built-in Leiningen tasks to a degree
 using hooks. Hook functionality is provided by the
 [Robert Hooke](https://github.com/technomancy/robert-hooke) library,
@@ -334,6 +339,11 @@ function in that namespace will be called. Note: automatic hooks are activated
 before manually specified hooks.
 
 ### Project Middleware
+
+**Note**: Leiningen supports project middleware in plugins;
+however this mechanism is extremely error-prone and difficult to
+debug. It should be considered deprecated as of 2.8.0 onward and will
+continue to work until version 3.0 but is strongly advised against.
 
 Project middleware is just a function that is called on a project map
 returning a new project map. Middleware gives a plugin the power to do
@@ -429,7 +439,7 @@ middleware.
 
 ## Clojure Version
 
-Leiningen 2.5.2 and on uses Clojure 1.7.0. If you need to use a
+Leiningen 2.7.0 and on uses Clojure 1.8.0. If you need to use a
 different version of Clojure from within a Leiningen plugin, you can
 use `eval-in-project` with a dummy project argument:
 
@@ -437,30 +447,6 @@ use `eval-in-project` with a dummy project argument:
 (eval-in-project {:dependencies '[[org.clojure/clojure "1.4.0"]]}
                  '(println "hello from" *clojure-version*))
 ```
-
-## Upgrading Existing Plugins
-
-Earlier versions of Leiningen had a few differences in the way plugins
-worked, but upgrading shouldn't be too difficult.
-
-The biggest difference between 1.x and 2.x is that `:dev-dependencies`
-have been done away with. There are no longer any dependencies that
-exist both in Leiningen's process and the project's process; Leiningen
-only sees `:plugins` and the project only sees `:dependencies`, though
-both these maps can be affected by the currently-active profiles.
-
-If your project doesn't need to use `eval-in-project` at all, it
-should be relatively easy to port; it's just a matter of updating any
-references to Leiningen functions which may have moved. All
-`leiningen.utils.*` namespaces have gone away, and `leiningen.core`
-has become `leiningen.core.main`.
-
-Plugins that do use `eval-in-project` should just be aware that the
-plugin's own dependencies and source will not be available to the
-project. If your plugin currently has code that needs to run in both
-contexts it must be split into multiple projects, one for `:plugins`
-and one for `:dependencies`. See the example of `lein-swank` above to
-see how to inject `:dependencies` in `eval-in-project` calls.
 
 ## Projects vs Standalone Execution
 
@@ -498,62 +484,7 @@ task will override it. If you'd like to shadow a built-in task, you
 can either create an alias or put it in the `leiningen.plugin.compile`
 namespace.
 
-## 1.x Compatibility
-
-Once you've identified the changes necessary to achieve compatibility
-with 2.x, you can decide whether you'd like to support 1.x and 2.x in
-the same codebase. In some cases it may be easier to simply keep them
-in separate branches, but sometimes it's better to support both.
-Luckily the strategy of using `:plugins` and adding in `:dependencies`
-just for calls to `eval-in-project` works fine in Leiningen 1.7.
-
-If you use functions that moved in 2.x, you can try requiring and
-resolving at runtime rather than compile time and falling back to the
-1.x versions of the function if it's not found. Again the `lein-swank`
-plugin provides an example of a compatibility shim:
-
-```clj
-(defn eval-in-project
-  "Support eval-in-project in both Leiningen 1.x and 2.x."
-  [project form init]
-  (let [[eip two?] (or (try (require 'leiningen.core.eval)
-                            [(resolve 'leiningen.core.eval/eval-in-project)
-                             true]
-                            (catch java.io.FileNotFoundException _))
-                       (try (require 'leiningen.compile)
-                            [(resolve 'leiningen.compile/eval-in-project)]
-                            (catch java.io.FileNotFoundException _)))]
-    (if two?
-      (eip project form init)
-      (eip project form nil nil init))))
-```
-
-Of course if the function has changed arities or has disappeared
-entirely this may not be feasible, but it should suffice in most
-cases.
-
-Most widely-used functions which have changed in 2.x can be used from
-the [leinjacker](https://github.com/sattvik/leinjacker) project, which
-provides a compatibility shim supporting both 1.x and 2.x.
-
-Another key change is that `:source-path`, `:resources-path`,
-`:java-source-path`, and `:test-path` have changed to
-`:source-paths`, `:resource-paths`, `:java-source-paths`, and
-`:test-paths`, and they should be vectors now instead of single
-strings. The old `:dev-resources` key is now just another entry to the
-`:resource-paths` vector that's only present when the `:dev` profile
-is active.
-
-Allowing the task to run outside a project directory is tricky to do
-in a backwards-compatible way since 1.x is overly-clever and actually
-inspects your argument list to figure out if it should pass in a
-project argument, while 2.x simply always passes it in and just allows
-it to be nil if it's not present. You can try checking the first
-argument to see if it's a project map, but if you have more than two
-arities this can get very tricky; it may just be better to maintain
-separate branches of your codebase in this situation.
-
-### Project-specific Tasks
+## Project-specific Tasks
 
 Occasionally, the need arises for a task to be included in a project's
 codebase. However, this is much less common than people think. If you
