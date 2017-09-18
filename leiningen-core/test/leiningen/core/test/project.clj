@@ -623,6 +623,6 @@
         (is (= (str sw)
                (str "(Warning: not using checkout-lib1/checkout-lib1 from "
                     "checkouts, top-level project depends on mismatched version. "
-                    "Checkout (at checkouts/lib1) declares project "
+                    "Checkout (at checkouts/lib1/) declares project "
                     "[checkout-lib1/checkout-lib1 \"0.0.1\"], top-level project "
                     "depends on: [checkout-lib1/checkout-lib1 \"0.0.2\"])\n")))))))
