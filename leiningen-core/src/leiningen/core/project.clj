@@ -1085,8 +1085,8 @@ Also initializes the project; see read-raw for a version that skips init."
   (for [dep (.listFiles (io/file (:root project) "checkouts"))
         :let [project-file (.getCanonicalFile (io/file dep "project.clj"))
               checkout-project (read-dependency-project project-file)
-              relative-path (.relativize (-> (io/file (:root project)) (.toPath))
-                                         (-> dep (.toPath)))]
+              relative-path (utils/relativize (:root project)
+                                              (-> dep (.getAbsolutePath)))]
         :when checkout-project]
     (do
       (warn-checkout-version-mismatch project checkout-project relative-path)
