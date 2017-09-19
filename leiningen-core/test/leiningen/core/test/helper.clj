@@ -11,3 +11,13 @@
         (catch clojure.lang.ExceptionInfo e
           (when-not (:exit-code (ex-data e))
             (throw e)))))))
+
+(defmacro with-err-str
+  "Evaluates exprs in a context in which *err* is bound to a fresh StringWriter.
+   Returns the String created by any printing calls in the evaluated body.
+   Equivalent to with-out-str, but re-binds *err* instead of *out*."
+  [& body]
+  `(let [s# (new java.io.StringWriter)]
+     (binding [*err* s#]
+       ~@body
+       (str s#))))

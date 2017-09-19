@@ -1,7 +1,8 @@
 (ns leiningen.core.test.user
   (:use clojure.test
         leiningen.core.user)
-  (:require [clojure.java.io :as io]))
+  (:require [clojure.java.io :as io]
+            [leiningen.core.test.helper :refer [with-err-str]]))
 
 (deftest resolving-repo-creds
   (with-redefs [credentials (constantly {#"^https://clojars\.org/.*"
@@ -37,16 +38,6 @@
               :username "u" :password "p"
               :passphrase "looooong" :private-key-file "./somewhere"
               :foo [:gpg "0x00D85767"]})))))
-
-(defmacro with-err-str
-  "Evaluates exprs in a context in which *err* is bound to a fresh StringWriter.
-   Returns the String created by any printing calls in the evaluated body.
-   Equivalent to with-out-str, but re-binds *err* instead of *out*."
-  [& body]
-  `(let [s# (new java.io.StringWriter)]
-     (binding [*err* s#]
-       ~@body
-       (str s#))))
 
 (deftest missing-credentials-file
   (with-redefs [leiningen-home (constantly "")
