@@ -12,7 +12,7 @@
             [clojure.string :as str])
   (:import (clojure.lang DynamicClassLoader)
            (java.io PushbackReader Reader)
-           (org.sonatype.aether.resolution ArtifactResolutionException)))
+           (org.eclipse.aether.resolution ArtifactResolutionException)))
 
 (defn make-project-properties [project]
   (with-open [baos (java.io.ByteArrayOutputStream.)]
